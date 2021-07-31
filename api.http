@@ -1,0 +1,2 @@
+GET https://www.kaiheila.cn/api/v3/gateway/index
+Authorization: Bot {{token}}
