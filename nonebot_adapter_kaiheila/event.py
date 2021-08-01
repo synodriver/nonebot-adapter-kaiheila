@@ -89,9 +89,13 @@ class Attachment(BaseModel):
 class Body(BaseModel):
     msg_id: str
     user_id: str
+    author_id: str
+    target_id: str
     channel_id: str
     emoji: Optional[Emoji] = None
     content: Optional[str] = None
+    updated_at: int
+    chat_code: str
 
     class Config:
         extra = "allow"
@@ -126,7 +130,7 @@ class Event(BaseEvent):
         https://developer.kaiheila.cn/doc/event/event-introduction
     """
     __event__ = ""
-    channel_type: str
+    channel_type: Literal["PERSON", "GROUP"]
     type_: int = Field(alias="type")  # 1:文字消息, 2:图片消息，3:视频消息，4:文件消息， 8:音频消息，9:KMarkdown，10:card消息，255:系统消息, 其它的暂未开放
     target_id: str
     author_id: str
@@ -138,6 +142,7 @@ class Event(BaseEvent):
     verify_token: Optional[str] = Field(None)
 
     post_type: str  # onebot兼容 message notice
+    self_id: str  # onebot兼容
 
     @overrides(BaseEvent)
     def get_type(self) -> str:
@@ -303,84 +308,49 @@ class UnpinnedMessageEvent(ChannelEvent):
     sub_type: Literal["unpinned_message"] = "unpinned_message"
 
 
-class MessageEvent(Event):
-    """消息事件"""
-    __event__ = "message"
-    post_type: Literal["message"] = "message"
-    message_type: str  # group private
-    sub_type: str
+# 私聊消息事件
+class PrivateNoticeEvent(NoticeEvent):
+    __event__ = "notice.private"
+    notice_type = "private"
 
-    @overrides(Event)
-    def get_type(self) -> str:
-        return "message"
-
-    @overrides(Event)
-    def get_event_name(self) -> str:
-        sub_type = getattr(self, "sub_type", None)
-        return f"{self.post_type}.{self.message_type}" + (f".{sub_type}"
-                                                          if sub_type else "")
-
-    @overrides(Event)
-    def get_session_id(self) -> str:
-        return self.author_id
-
-    @overrides(Event)
-    def get_user_id(self) -> str:
-        return self.author_id
-
-    @overrides(Event)
-    def get_message(self) -> Message:
-        return self.message  # todo 要写
-
-    @overrides(Event)
-    def get_plaintext(self) -> str:
-        return self.message.extract_plain_text()  # todo 要写
-
-
-# 私聊消息
-class PrivateMessageEvent(MessageEvent):
-    """私聊消息"""
-    __event__ = "message.private"
-    message_type: Literal["private"] = "private"
-
-    @overrides(MessageEvent)
-    def get_session_id(self) -> str:
-        return self.extra.body.author_id
-
-    @overrides(MessageEvent)
+    @overrides(NoticeEvent)
     def get_user_id(self) -> str:
         return self.extra.body.author_id
 
+    @overrides(NoticeEvent)
+    def get_session_id(self) -> str:
+        return self.extra.body.author_id
 
-class UpdatedPrivateMessageEvent(PrivateMessageEvent):
+
+class UpdatedPrivateMessageEvent(PrivateNoticeEvent):
     """
     私聊消息更新
     """
-    __event__ = "message.private.updated_private_message"
+    __event__ = "notice.private.updated_private_message"
     sub_type: Literal["updated_private_message"] = "updated_private_message"
 
 
-class DeletedPrivateMessageEvent(PrivateMessageEvent):
+class DeletedPrivateMessageEvent(PrivateNoticeEvent):
     """
     私聊消息被删除
     """
-    __event__ = "message.private.deleted_private_message"
+    __event__ = "notice.private.deleted_private_message"
     sub_type: Literal["deleted_private_message"] = "deleted_private_message"
 
 
-class PrivateAddedReactionEvent(PrivateMessageEvent):
+class PrivateAddedReactionEvent(PrivateNoticeEvent):
     """
     私聊内用户添加 reaction
     """
-    __event__ = "message.private.private_added_reaction"
+    __event__ = "notice.private.private_added_reaction"
     sub_type: Literal["private_added_reaction"] = "private_added_reaction"
 
 
-class PrivateDeletedReactionEvent(PrivateMessageEvent):
+class PrivateDeletedReactionEvent(PrivateNoticeEvent):
     """
     私聊内用户取消 reaction
     """
-    __event__ = "message.private.private_deleted_reaction"
+    __event__ = "notice.private.private_deleted_reaction"
     sub_type: Literal["private_deleted_reaction"] = "private_deleted_reaction"
 
 
@@ -508,20 +478,67 @@ class DeletedBlockListEvent(ServerEvent):
 
 
 # 消息相关事件列表
-class GroupMessageEvent(MessageEvent):
-    """
-    消息相关事件列表
-    """
-    __event__ = "message.group"
-    message_type: Literal["group"] = "group"
+class MessageEvent(Event):
+    """消息事件"""
+    __event__ = "message"
+    post_type: Literal["message"] = "message"
+    message_type: str  # group private 其实是person
+    sub_type: str
 
     @property
     def sender(self) -> User:
         return self.extra.author
 
     @overrides(Event)
+    def get_type(self) -> str:
+        return "message"
+
+    @overrides(Event)
+    def get_event_name(self) -> str:
+        sub_type = getattr(self, "sub_type", None)
+        return f"{self.post_type}.{self.message_type}" + (f".{sub_type}"
+                                                          if sub_type else "")
+
+    @overrides(Event)
+    def get_session_id(self) -> str:
+        return self.author_id
+
+    @overrides(Event)
+    def get_user_id(self) -> str:
+        return self.author_id
+
+    @overrides(Event)
+    def get_message(self) -> Message:
+        return self.content  # todo 要写
+
+    @overrides(Event)
+    def get_plaintext(self) -> str:
+        return self.content.extract_plain_text()  # todo 要写
+
+
+# 私聊消息
+class PrivateMessageEvent(MessageEvent):
+    """私聊消息"""
+    __event__ = "message.private"
+    message_type: Literal["private"] = "private"
+
+    @overrides(MessageEvent)
     def is_tome(self) -> bool:
-        pass
+        return True
+
+
+# 群
+class GroupMessageEvent(MessageEvent):
+    """
+    频道消息 为了和onebot一致还是叫群消息
+    消息相关事件列表
+    """
+    __event__ = "message.group"
+    message_type: Literal["group"] = "group"
+
+    @overrides(MessageEvent)
+    def is_tome(self) -> bool:
+        return True if self.extra.mention and self.self_id in self.extra.mention else False
 
     @overrides(Event)
     def get_event_description(self) -> str:
@@ -543,4 +560,4 @@ def get_event_model(event_name) -> List[Type[Event]]:  # todo 改写了
 
       - ``List[Type[Event]]``
     """
-    return [model.value for model in _t.prefixes("." + event_name)][::-1]
+    pass

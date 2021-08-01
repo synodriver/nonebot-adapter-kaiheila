@@ -2,7 +2,7 @@ import re
 import sys
 import hmac
 import asyncio
-from typing import Any, Dict, Union, Optional, TYPE_CHECKING
+from typing import Any, Dict, Union, List, Optional, TYPE_CHECKING
 
 try:
     import ujson as json
@@ -281,7 +281,8 @@ class Bot(BaseBot):
         super().__init__(self_id, websocket=websocket)
         self.token = None
         self.client_secret = None
-        self.client_session = aiohttp.ClientSession()
+        self.client_session = aiohttp.ClientSession(json_serialize=json.dumps)
+        self.session_id: str = None  # ws连接成功后由hello包给出
         self.buffer = Buffer()
 
     @property
@@ -305,15 +306,26 @@ class Bot(BaseBot):
             }))
             await asyncio.sleep(30)  # todo 心跳超時設計 怎么设计 加入ResultStore吗
 
+    @staticmethod
+    async def get_gateway(token: str) -> str:
+        async with aiohttp.ClientSession(json_serialize=json.dumps) as session:
+            async with session.get("https://www.kaiheila.cn/api/v3/gateway/index",
+                                   headers={"Authorization": f"Bot {token}"}) as resp:
+                result = await resp.json()
+                return _handle_api_result(result)["url"]
+
     @classmethod
     def register(cls, driver: "Driver", config: "Config"):
         super().register(driver, config)
         cls.kaiheila_config = KaiheilaConfig(**config.dict())
-        for bot in cls.kaiheila_config.bots:
+        tasks = [asyncio.create_task(cls.get_gateway(bot["token"])) for bot in cls.kaiheila_config.bots]
+        ws_urls: List[str] = asyncio.get_event_loop().run_until_complete(asyncio.gather(*tasks))
+        # todo 检查ws_url的正确性
+        for index, bot in enumerate(cls.kaiheila_config.bots):
             driver.setup_websocket(
                 WebSocketSetup(adapter="kaiheila",
                                self_id=bot["client_id"],
-                               url="",  # todo request gateway
+                               url=ws_urls[index],
                                headers={"Authorization": f"Bot {bot['token']}"},
                                http_version="1.1",
                                reconnect_interval=5))
