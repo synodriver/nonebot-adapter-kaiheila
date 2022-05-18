@@ -112,13 +112,13 @@ def _check_at_me(bot: "Bot", event: "Event"):
                     "text"].lstrip()
                 if not event.message[0].data["text"]:
                     del event.message[0]
-            if event.message and event.message[0] == at_me_seg:
-                del event.message[0]
-                if event.message and event.message[0].type == "text":
-                    event.message[0].data["text"] = event.message[0].data[
-                        "text"].lstrip()
-                    if not event.message[0].data["text"]:
-                        del event.message[0]
+        if event.message and event.message[0] == at_me_seg:
+            del event.message[0]
+            if event.message and event.message[0].type == "text":
+                event.message[0].data["text"] = event.message[0].data[
+                    "text"].lstrip()
+                if not event.message[0].data["text"]:
+                    del event.message[0]
 
         if not event.to_me:
             # check the last segment
@@ -156,16 +156,15 @@ def _check_nickname(bot: "Bot", event: "Event"):
     if first_msg_seg.type != "text":
         return
 
-    first_text = first_msg_seg.data["text"]
-
-    nicknames = set(filter(lambda n: n, bot.config.nickname))
-    if nicknames:
+    if nicknames := set(filter(lambda n: n, bot.config.nickname)):
         # check if the user is calling me with my nickname
         nickname_regex = "|".join(nicknames)
-        m = re.search(rf"^({nickname_regex})([\s,，]*|$)", first_text,
-                      re.IGNORECASE)
-        if m:
-            nickname = m.group(1)
+        first_text = first_msg_seg.data["text"]
+
+        if m := re.search(
+            rf"^({nickname_regex})([\s,，]*|$)", first_text, re.IGNORECASE
+        ):
+            nickname = m[1]
             log("DEBUG", f"User is calling me {nickname}")
             event.to_me = True
             first_msg_seg.data["text"] = first_text[m.end():]
@@ -209,8 +208,7 @@ class ResultStore:
     def add_result(cls, result: Dict[str, Any]):
         if isinstance(result.get("echo"), dict) and \
                 isinstance(result["echo"].get("seq"), int):
-            future = cls._futures.get(result["echo"]["seq"])
-            if future:
+            if future := cls._futures.get(result["echo"]["seq"]):
                 future.set_result(result)
 
     @classmethod
@@ -341,7 +339,7 @@ class Bot(BaseBot):
     @classmethod
     @overrides(BaseBot)
     async def check_permission(cls, driver: "Driver", connection_type: str,
-                               headers: dict, body: Optional[bytes]) -> str:  # todo abort
+                               headers: dict, body: Optional[bytes]) -> str:    # todo abort
         """
         :说明:
 
@@ -369,7 +367,7 @@ class Bot(BaseBot):
                 log("WARNING", "Missing Signature Header")
                 raise RequestDenied(401, "Missing Signature")
             sig = hmac.new(secret.encode("utf-8"), body, "sha1").hexdigest()
-            if x_signature != "sha1=" + sig:
+            if x_signature != f"sha1={sig}":
                 log("WARNING", "Signature Header is invalid")
                 raise RequestDenied(403, "Signature is invalid")
 
@@ -512,7 +510,7 @@ class Bot(BaseBot):
             params["user_id"] = getattr(event, "user_id")
         if getattr(event, "group_id", None):
             params["group_id"] = getattr(event, "group_id")
-        params.update(kwargs)
+        params |= kwargs
 
         if "message_type" not in params:
             if params.get("group_id", None):

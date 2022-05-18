@@ -538,7 +538,7 @@ class GroupMessageEvent(MessageEvent):
 
     @overrides(MessageEvent)
     def is_tome(self) -> bool:
-        return True if self.extra.mention and self.self_id in self.extra.mention else False
+        return bool(self.extra.mention and self.self_id in self.extra.mention)
 
     @overrides(Event)
     def get_event_description(self) -> str:

@@ -28,8 +28,9 @@ class ActionFailed(BaseActionFailed, KaiheilaAdapterException):
         self.info = kwargs
 
     def __repr__(self):
-        return f"<ActionFailed " + ", ".join(
-            f"{k}={v}" for k, v in self.info.items()) + ">"
+        return (
+            "<ActionFailed " + ", ".join(f"{k}={v}" for k, v in self.info.items())
+        ) + ">"
 
     def __str__(self):
         return self.__repr__()
